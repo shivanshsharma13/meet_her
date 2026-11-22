@@ -1,12 +1,12 @@
+import * as room from './room.js';
+import { iceServers } from './config.js';
+
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
   me: null,
   partner: null,
   partnerOnline: false,
-  iceServers: [],
-  ws: null,
-  conn: null, // this device's connection id on the server
   call: null,
   incoming: null,
 };
@@ -15,17 +15,6 @@ const state = {
 
 function show(id) {
   for (const el of document.querySelectorAll('.screen')) el.hidden = el.id !== id;
-}
-
-async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(path, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body && JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
-  return data;
 }
 
 let toastTimer;
@@ -40,9 +29,7 @@ function toast(text, ms = 3000) {
 // Vibration works on Android; iOS browsers ignore it.
 const buzz = (pattern) => navigator.vibrate?.(pattern);
 
-function send(msg) {
-  if (state.ws?.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify(msg));
-}
+const send = room.send;
 
 // ---------- sounds (generated, no audio files needed) ----------
 
@@ -93,60 +80,76 @@ function stopTone() {
 
 // ---------- login & home ----------
 
-async function boot() {
-  try {
-    const data = await api('/api/me');
-    Object.assign(state, data);
-    enterHome();
-  } catch {
+function boot() {
+  if (!room.isConfigured) {
     show('login');
-    $('#passcode').focus();
+    $('#signin-btn').disabled = true;
+    $('#login-error').textContent = 'Almost there: add your Firebase settings to config.js (see README).';
+    return;
   }
+  room.onUser((user) => (user ? enterRoom(user) : show('login')));
 }
 
-$('#login-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
+$('#signin-btn').addEventListener('click', async () => {
   $('#login-error').textContent = '';
   try {
-    await api('/api/login', { method: 'POST', body: { passcode: $('#passcode').value } });
-    $('#passcode').value = '';
-    boot();
+    await room.signIn();
   } catch (err) {
-    $('#login-error').textContent = err.message;
+    if (err.code !== 'auth/popup-closed-by-user') $('#login-error').textContent = err.message;
   }
 });
 
-$('#logout-btn').addEventListener('click', async () => {
-  await api('/api/logout', { method: 'POST' });
-  state.ws?.close();
-  state.ws = null;
-  show('login');
+$('#logout-btn').addEventListener('click', () => {
+  if (state.call) return;
+  state.me = null;
+  room.leaveRoom();
 });
 
-function enterHome() {
-  const { me, partner } = state;
-  $('#hello').textContent = `Hi ${me.name} 💗`;
-  $('#partner-name').textContent = partner.name;
-  $('#partner-initial').textContent = partner.name[0].toUpperCase();
-  $('#incoming-initial').textContent = partner.name[0].toUpperCase();
-  $('#incoming-name').textContent = partner.name;
-  $('#call-name').textContent = partner.name;
-  renderPresence();
-  show('home');
-  connectSocket();
-  loadMemories();
+async function enterRoom(user) {
+  try {
+    await room.joinRoom(user, {
+      me: (me) => {
+        state.me = me;
+        $('#hello').textContent = `Hi ${me.name} 💗`;
+      },
+      partner: (partner) => {
+        state.partner = partner;
+        renderPartner();
+      },
+      presence: (online) => {
+        state.partnerOnline = online;
+        renderPartner();
+      },
+      message: (msg) => handlers[msg.type]?.(msg),
+      memory: addMemory,
+    });
+    show('home');
+  } catch (err) {
+    // The database rules only let your two Google accounts in.
+    await room.leaveRoom().catch(() => {});
+    show('login');
+    $('#login-error').textContent = /permission/i.test(err.message)
+      ? `This room is private 🔒 (${user.email} isn't on the list)`
+      : err.message;
+  }
 }
 
-function renderPresence() {
+function renderPartner() {
+  const name = state.partner?.name;
+  $('#partner-name').textContent = name || 'Waiting for your person…';
+  $('#partner-initial').textContent = name ? name[0].toUpperCase() : '💌';
+  $('#incoming-initial').textContent = name?.[0].toUpperCase() ?? '';
+  $('#incoming-name').textContent = name ?? '';
+  $('#call-name').textContent = name ?? '';
   $('#presence-dot').classList.toggle('on', state.partnerOnline);
-  $('#presence-text').textContent = state.partnerOnline ? 'Online now' : 'Away';
+  $('#presence-text').textContent = !name ? 'They haven’t signed in yet' : state.partnerOnline ? 'Online now' : 'Away';
   $('#call-btn').disabled = !state.partnerOnline;
 }
 
 $('#call-btn').addEventListener('click', startCall);
 
 $('#nudge-btn').addEventListener('click', () => {
-  if (!state.partnerOnline) return toast(`${state.partner.name} is away right now`);
+  if (!state.partnerOnline) return toast(`${state.partner?.name ?? 'They'} ${state.partner ? 'is away' : 'haven’t joined yet'}`);
   send({ type: 'nudge' });
   floatEmojis('💭', 6);
   toast('Sent 💗');
@@ -154,74 +157,37 @@ $('#nudge-btn').addEventListener('click', () => {
 
 // ---------- memories ----------
 
-async function loadMemories() {
-  try {
-    renderMemories(await api('/api/memories'));
-  } catch {
-    /* gallery just stays empty */
-  }
+// Memories arrive one at a time (all existing ones on sign-in, then new ones live); newest first.
+function addMemory(memory) {
+  const btn = document.createElement('button');
+  const img = document.createElement('img');
+  img.src = memory.thumb;
+  img.alt = memory.caption;
+  btn.append(img);
+  btn.addEventListener('click', () => openViewer(memory));
+  $('#gallery').prepend(btn);
+  $('#gallery-empty').hidden = true;
+  if (state.call && Date.now() - memory.at < 60_000) toast('Saved to our memories 📸');
 }
 
-let memoriesCache = [];
-function renderMemories(list) {
-  memoriesCache = list;
-  const gallery = $('#gallery');
-  gallery.replaceChildren(...list.map((m) => {
-    const btn = document.createElement('button');
-    const img = document.createElement('img');
-    img.src = `/memories/${m.file}`;
-    img.loading = 'lazy';
-    img.alt = m.caption;
-    btn.append(img);
-    btn.addEventListener('click', () => openViewer(m));
-    return btn;
-  }));
-  $('#gallery-empty').hidden = list.length > 0;
-}
-
-function openViewer(memory) {
-  const url = `/memories/${memory.file}`;
-  $('#viewer-img').src = url;
+async function openViewer(memory) {
+  $('#viewer-img').src = memory.thumb;
   $('#viewer-caption').textContent = `${memory.caption} · ${new Date(memory.at).toLocaleString()}`;
-  $('#viewer-download').href = url;
-  $('#viewer-download').download = memory.file;
+  $('#viewer-download').removeAttribute('href');
   $('#viewer').hidden = false;
+  const full = await room.loadMemoryImage(memory.id);
+  if (!full) return;
+  $('#viewer-img').src = full;
+  $('#viewer-download').href = full;
+  $('#viewer-download').download = `us-${new Date(memory.at).toISOString().slice(0, 10)}.jpg`;
 }
 $('#viewer-close').addEventListener('click', () => ($('#viewer').hidden = true));
 
-// ---------- socket ----------
-
-function connectSocket() {
-  if (state.ws) return;
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  state.ws = ws;
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    handlers[msg.type]?.(msg);
-  };
-  ws.onclose = () => {
-    if (state.ws !== ws) return; // logged out
-    state.ws = null;
-    state.partnerOnline = false;
-    renderPresence();
-    setTimeout(() => state.me && connectSocket(), 2000);
-  };
-}
-
 const handlers = {
-  hello: (m) => (state.conn = m.conn),
-  presence: (m) => {
-    state.partnerOnline = m.partnerOnline;
-    renderPresence();
-  },
   nudge: () => {
     toast(`${state.partner.name} is thinking of you 💭💗`, 5000);
     buzz([80, 60, 80, 60, 200]);
     floatEmojis('💗', 14);
-  },
-  memory: (m) => {
-    renderMemories([m.memory, ...memoriesCache]);
-    if (state.call) toast('Saved to our memories 📸');
   },
   ring: onRing,
   'ring-cancel': (m) => {
@@ -371,18 +337,18 @@ async function onAccept(m) {
   setStatus('Connecting…');
   const pc = createPeer();
   await pc.setLocalDescription(await pc.createOffer());
-  send({ type: 'signal', to: call.peerConn, sdp: pc.localDescription });
+  send({ type: 'signal', to: call.peerConn, sdp: pc.localDescription.toJSON() });
 }
 
 function createPeer() {
   const call = state.call;
-  const pc = new RTCPeerConnection({ iceServers: state.iceServers });
+  const pc = new RTCPeerConnection({ iceServers });
   call.pc = pc;
   for (const track of call.stream.getTracks()) pc.addTrack(track, call.stream);
   // Without a camera we still want to see the other person's video.
   if (!call.stream.getVideoTracks().length) pc.addTransceiver('video', { direction: 'recvonly' });
 
-  pc.onicecandidate = (e) => e.candidate && send({ type: 'signal', to: call.peerConn, candidate: e.candidate });
+  pc.onicecandidate = (e) => e.candidate && send({ type: 'signal', to: call.peerConn, candidate: e.candidate.toJSON() });
   pc.ontrack = (e) => ($('#remote-video').srcObject = e.streams[0]);
   pc.onconnectionstatechange = () => {
     if (state.call !== call) return;
@@ -409,7 +375,7 @@ async function onSignal(m) {
     for (const c of call.pending.splice(0)) await pc.addIceCandidate(c);
     if (m.sdp.type === 'offer') {
       await pc.setLocalDescription(await pc.createAnswer());
-      send({ type: 'signal', to: call.peerConn, sdp: pc.localDescription });
+      send({ type: 'signal', to: call.peerConn, sdp: pc.localDescription.toJSON() });
     }
   } else if (m.candidate) {
     if (pc.remoteDescription) await pc.addIceCandidate(m.candidate);
@@ -589,7 +555,8 @@ async function runBooth(isCapturer) {
   if (isCapturer && state.call === call) {
     const caption = `${state.partner.name} ♥ ${state.me.name}`;
     try {
-      await api('/api/memories', { method: 'POST', body: { image: capturePolaroid(caption), caption } });
+      const canvas = capturePolaroid(caption);
+      await room.saveMemory({ caption, image: canvas.toDataURL('image/jpeg', 0.85), thumb: thumbnail(canvas) });
     } catch (err) {
       toast(`Couldn't save photo: ${err.message}`);
     }
@@ -618,7 +585,16 @@ function capturePolaroid(caption) {
   ctx.font = '400 28px Fredoka, system-ui, sans-serif';
   const date = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
   ctx.fillText(date, canvas.width / 2, pad + frame + 115);
-  return canvas.toDataURL('image/jpeg', 0.9);
+  return canvas;
+}
+
+// Small copy for the gallery grid, so opening the app doesn't download every full photo.
+function thumbnail(source) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 360;
+  canvas.height = Math.round((source.height / source.width) * 360);
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.7);
 }
 
 // Draw a video frame cropped to fill the box (like object-fit: cover), with rounded corners.
@@ -650,5 +626,7 @@ function drawCover(ctx, video, x, y, w, h, mirror) {
 
 // ---------- start ----------
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+if (new URLSearchParams(location.search).has('emulator')) window.room = room; // lets tests sign in
+
 boot();

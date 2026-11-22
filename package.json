@@ -1,20 +1,11 @@
 {
   "name": "our-little-room",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A private video calling room for two, with hearts, touches, and a photo booth.",
   "type": "module",
   "scripts": {
-    "start": "node --env-file-if-exists=.env server.js",
-    "start:https": "HTTPS=1 PORT=3443 node --env-file-if-exists=.env server.js",
+    "dev": "python3 -m http.server 3000 --directory public",
     "icons": "node scripts/make-icons.js"
-  },
-  "engines": {
-    "node": ">=22.9"
-  },
-  "dependencies": {
-    "express": "4.21.2",
-    "selfsigned": "2.4.1",
-    "ws": "8.18.0"
   }
 }

@@ -1,0 +1,11 @@
+{
+  "rules": {
+    ".read": "auth != null && auth.token.email_verified == true && (auth.token.email == 'YOUR_EMAIL@gmail.com' || auth.token.email == 'HER_EMAIL@gmail.com')",
+    ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'YOUR_EMAIL@gmail.com' || auth.token.email == 'HER_EMAIL@gmail.com')",
+    "inbox": {
+      "$uid": {
+        ".indexOn": ["at"]
+      }
+    }
+  }
+}

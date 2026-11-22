@@ -1,6 +1,9 @@
-// Caches the app shell so it opens instantly; live data always comes from the network.
-const CACHE = 'room-v1';
-const SHELL = ['/', '/style.css', '/app.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+// Caches the app shell so it opens instantly; live data always comes from Firebase.
+const CACHE = 'room-v2';
+const SHELL = [
+  './', './style.css', './app.js', './room.js', './config.js',
+  './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
@@ -15,22 +18,10 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Network first, so updates show up right away; the cache is only an offline fallback.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
-
-  // Memory photos never change, so serve them from cache first.
-  if (url.pathname.startsWith('/memories/')) {
-    e.respondWith(
-      caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
-        return res;
-      })),
-    );
-    return;
-  }
-
-  // Everything else: network first, cache as a fallback when offline.
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {
@@ -40,6 +31,6 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request)),
+      .catch(() => caches.match(e.request, { ignoreSearch: true })),
   );
 });

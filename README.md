@@ -1,43 +1,36 @@
 # Our Little Room 💗
 
-A private video calling app for exactly two people. It runs in the browser on a PC and installs like an app on Android phones and tablets.
+A private video calling app for exactly two people. It's hosted on GitHub Pages, works in the browser on a PC, and installs like an app on Android phones and tablets. Firebase (free plan) handles Google sign-in and the realtime data.
 
-**Phase 1 (done):** passcode login, presence, video calls (ring, answer or decline on any of her devices), tap-to-touch with vibration, floating emoji reactions, photo booth polaroids saved to a shared memory wall, "thinking of you" nudges, mute, camera off, flip camera, screen kept awake during calls.
+**Phase 1 (done):** Google sign-in limited to your two emails, presence, video calls (ring, answer or decline on any of her devices), tap-to-touch with vibration, floating emoji reactions, photo booth polaroids saved to a shared memory wall, "thinking of you" nudges, mute, camera off, flip camera, mic-only fallback, screen kept awake during calls.
 
-## Run it on your PC
+## One-time Firebase setup (about 5 minutes)
+
+1. Go to https://console.firebase.google.com → **Create a project** (any name; you can turn off Google Analytics).
+2. **Build → Authentication → Get started → Sign-in method → Google → Enable → Save.**
+3. Still in Authentication: **Settings → Authorized domains → Add domain** → `shivanshsharma13.github.io`.
+4. **Build → Realtime Database → Create database** → pick a location → **Start in locked mode**.
+5. Open the **Rules** tab, paste in the contents of [`database.rules.json`](database.rules.json), replace `YOUR_EMAIL@gmail.com` and `HER_EMAIL@gmail.com` with your two Google emails, and click **Publish**. Only those two accounts can read or write anything.
+6. **Project settings (gear icon) → General → Your apps → Web (`</>`)** → register an app (no hosting needed). Copy the `firebaseConfig` values into [`public/config.js`](public/config.js). They aren't secret; the rules above are what keeps the room private.
+7. Commit and push. GitHub Actions publishes the site to https://shivanshsharma13.github.io/meet_her/.
+
+Keep the real emails only in the Firebase console, not in this public repo.
+
+## Installing on her phone or tablet
+
+Open https://shivanshsharma13.github.io/meet_her/ in Chrome → sign in with Google → Chrome menu (⋮) → **Add to Home screen**.
+
+## Running locally
 
 ```bash
-npm install
-cp .env.example .env   # then set both names and two different passcodes
-npm start
+npm run dev
 ```
 
-Open http://localhost:3000. Each person logs in with their own passcode.
-
-## Test with her phone on the same Wi-Fi
-
-Phones only allow camera access over HTTPS, so start the HTTPS version:
-
-```bash
-npm run start:https
-```
-
-On the phone, open `https://<your-PC's-IP>:3443` (find the IP with `hostname -I`). Chrome shows a certificate warning because the certificate is self-signed: tap **Advanced → Proceed**.
-
-## Put it online so it works from anywhere
-
-Deploy to any Node host that supports WebSockets, for example [Render](https://render.com) (free tier):
-
-1. Push this folder to a private GitHub repo.
-2. On Render: New → Web Service → choose the repo. Build command `npm install`, start command `npm start`.
-3. Under Environment, add `USER1_NAME`, `USER1_PASS`, `USER2_NAME`, `USER2_PASS`.
-4. Open the `https://…onrender.com` URL on her phone, then Chrome menu → **Add to Home screen**.
-
-Free Render instances sleep when idle and reset their disk on redeploy, so memory photos can be lost. Attach a persistent disk and set `DATA_DIR` to its path to keep them.
+Then open http://localhost:3000 (`localhost` is allowed by Firebase by default).
 
 ### If calls don't connect on mobile data
 
-Some networks block direct connections. Get free TURN credentials (Metered or Cloudflare) and set `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` (see `.env.example`).
+Some networks block direct connections. Get free TURN credentials (Metered or Cloudflare) and add them to `iceServers` in `public/config.js`.
 
 ## Roadmap
 
