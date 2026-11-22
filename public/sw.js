@@ -1,5 +1,5 @@
 // Caches the app shell so it opens instantly; live data always comes from Firebase.
-const CACHE = 'room-v3';
+const CACHE = 'room-v4';
 const SHELL = [
   './', './style.css', './app.js', './room.js', './config.js',
   './fun/draw.js', './fun/games.js', './fun/decks.js', './fun/together.js',
@@ -7,7 +7,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -24,7 +24,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    // no-cache: always check with GitHub Pages (it otherwise lets browsers reuse files for 10 minutes).
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();

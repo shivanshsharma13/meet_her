@@ -756,7 +756,20 @@ function drawCover(ctx, video, x, y, w, h, mirror) {
 
 // ---------- start ----------
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // A new version was just installed: reload to use it, but never in the middle of a call.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let updatePending = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return; // first install, nothing old on screen
+    if (!state.call && !state.incoming) location.reload();
+    else updatePending = true;
+  });
+  setInterval(() => {
+    if (updatePending && !state.call && !state.incoming) location.reload();
+  }, 5000);
+}
 if (new URLSearchParams(location.search).has('emulator')) window.room = room; // lets tests sign in
 
 boot();
