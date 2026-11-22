@@ -1,7 +1,8 @@
 // Caches the app shell so it opens instantly; live data always comes from Firebase.
-const CACHE = 'room-v2';
+const CACHE = 'room-v3';
 const SHELL = [
   './', './style.css', './app.js', './room.js', './config.js',
+  './fun/draw.js', './fun/games.js', './fun/decks.js', './fun/together.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
 ];
 

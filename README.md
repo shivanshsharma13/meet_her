@@ -4,6 +4,8 @@ A private video calling app for exactly two people. It's hosted on GitHub Pages,
 
 **Phase 1 (done):** Google sign-in limited to your two emails, presence, video calls (ring, answer or decline on any of her devices), tap-to-touch with vibration, floating emoji reactions, photo booth polaroids saved to a shared memory wall, "thinking of you" nudges, mute, camera off, flip camera, mic-only fallback, screen kept awake during calls.
 
+**Phase 2 (done):** tap 🎲 during a call to play together. Draw on the call, couple quiz (scores are saved), truth or dare, would you rather, pictionary, and watch or listen to YouTube in sync. In-call activities travel over a direct WebRTC data channel between your two devices.
+
 ## One-time Firebase setup (about 5 minutes)
 
 1. Go to https://console.firebase.google.com → **Create a project** (any name; you can turn off Google Analytics).
@@ -34,6 +36,5 @@ Some networks block direct connections. Get free TURN credentials (Metered or Cl
 
 ## Roadmap
 
-- **Phase 2, play:** shared drawing on the call, mini games (couple quiz, truth or dare, would you rather, pictionary), watch YouTube together, listen to music together.
 - **Phase 3, between calls:** push notifications (calls and nudges reach her even when the app is closed), countdown, time-locked love notes, daily question, call streak and stats, mood status.
 - **Phase 4, polish:** face filters, date-night themes with ambient sound, sleep call mode, birthday and anniversary surprises.

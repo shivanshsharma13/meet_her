@@ -1,5 +1,8 @@
 import * as room from './room.js';
 import { iceServers } from './config.js';
+import { createDraw } from './fun/draw.js';
+import { createGames } from './fun/games.js';
+import { createTogether } from './fun/together.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -219,9 +222,26 @@ const handlers = {
     buzz(30);
   },
   booth: (m) => isInCallWith(m.from) && runBooth(false),
+  activity: (m) => {
+    if (!isInCallWith(m.from)) return;
+    if (m.name) openActivity(m.name, true);
+    else closeActivity(true);
+  },
+  draw: (m) => isInCallWith(m.from) && draw.onMessage(m),
+  game: (m) => isInCallWith(m.from) && games.onMessage(m),
+  yt: (m) => isInCallWith(m.from) && together.onMessage(m),
 };
 
 const isInCallWith = (conn) => state.call && state.call.peerConn === conn;
+
+// In-call messages go straight to the other device over the call's data channel;
+// until that's open they fall back to Firebase.
+function sendPeer(msg) {
+  const call = state.call;
+  if (!call?.peerConn) return;
+  if (call.dc?.readyState === 'open') call.dc.send(JSON.stringify(msg));
+  else send({ ...msg, to: call.peerConn });
+}
 
 // ---------- calling ----------
 
@@ -348,6 +368,16 @@ function createPeer() {
   // Without a camera we still want to see the other person's video.
   if (!call.stream.getVideoTracks().length) pc.addTransceiver('video', { direction: 'recvonly' });
 
+  const useChannel = (dc) => {
+    call.dc = dc;
+    dc.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      handlers[msg.type]?.({ ...msg, from: call.peerConn });
+    };
+  };
+  if (call.role === 'caller') useChannel(pc.createDataChannel('fun'));
+  else pc.ondatachannel = (e) => useChannel(e.channel);
+
   pc.onicecandidate = (e) => e.candidate && send({ type: 'signal', to: call.peerConn, candidate: e.candidate.toJSON() });
   pc.ontrack = (e) => ($('#remote-video').srcObject = e.streams[0]);
   pc.onconnectionstatechange = () => {
@@ -386,6 +416,9 @@ async function onSignal(m) {
 function endCall(reason) {
   const call = state.call;
   if (!call) return;
+  closeActivity(true);
+  draw.clearLocal();
+  $('#play-menu').hidden = true;
   state.call = null;
   clearTimeout(call.ringTimer);
   clearInterval(call.timer);
@@ -468,13 +501,16 @@ $('#flip-btn').addEventListener('click', async () => {
   }
 });
 
-$('#react-btn').addEventListener('click', () => ($('#emoji-tray').hidden = !$('#emoji-tray').hidden));
+$('#react-btn').addEventListener('click', () => {
+  $('#play-menu').hidden = true;
+  $('#emoji-tray').hidden = !$('#emoji-tray').hidden;
+});
 
 $('#emoji-tray').addEventListener('click', (e) => {
   const emoji = e.target.closest('button')?.dataset.emoji;
   if (!emoji || !state.call?.connected) return;
   floatEmojis(emoji);
-  send({ type: 'react', to: state.call.peerConn, emoji });
+  sendPeer({ type: 'react', emoji });
 });
 
 // Tap anywhere on her video to send a "touch" that ripples and vibrates on her screen.
@@ -487,8 +523,100 @@ $('#remote-video').addEventListener('pointerdown', (e) => {
   const x = e.clientX / innerWidth;
   const y = e.clientY / innerHeight;
   showTouch(x, y, false);
-  send({ type: 'touch', to: call.peerConn, x, y });
+  sendPeer({ type: 'touch', x, y });
 });
+
+// ---------- play together ----------
+
+const ACTIVITIES = {
+  draw: 'Draw together 🎨',
+  quiz: 'Couple quiz 💞',
+  tod: 'Truth or dare 🔥',
+  wyr: 'Would you rather 🤔',
+  pic: 'Pictionary ✏️',
+  watch: 'Watch together 🎬',
+  music: 'Listen together 🎵',
+};
+
+const draw = createDraw({ canvas: $('#draw-canvas'), sendPeer });
+
+function setDrawing(on) {
+  draw.setActive(on);
+  $('#draw-tools').hidden = !on;
+  $('#draw-done-btn').hidden = state.activity !== 'draw';
+}
+
+const games = createGames({
+  sendPeer,
+  me: () => state.me,
+  partner: () => state.partner,
+  toast,
+  floatEmojis,
+  setDrawing,
+  draw,
+  room,
+});
+
+const together = createTogether({
+  sendPeer,
+  toast,
+  stage: $('#watch-stage'),
+  setMode: (mode) => {
+    $('#call').classList.toggle('watch', mode === 'watch');
+    $('#call').classList.toggle('music', mode === 'music');
+    $('#watch-stage').hidden = !mode;
+  },
+});
+
+// Opening an activity opens it on both screens; `fromPartner` means they started it.
+function openActivity(name, fromPartner = false) {
+  if (!ACTIVITIES[name] || !state.call?.connected) return;
+  closeActivity(true);
+  state.activity = name;
+  $('#play-menu').hidden = true;
+  if (!fromPartner) sendPeer({ type: 'activity', name });
+  else toast(`${state.partner.name} started ${ACTIVITIES[name]}`);
+
+  if (name === 'draw') return setDrawing(true);
+  $('#activity-title').textContent = ACTIVITIES[name];
+  $('#activity').hidden = false;
+  const body = $('#activity-body');
+  body.replaceChildren();
+  if (name === 'watch' || name === 'music') together.open(name, body);
+  else games.open(name, body, !fromPartner);
+}
+
+function closeActivity(silent = false) {
+  if (!state.activity) return;
+  games.close();
+  together.close();
+  setDrawing(false);
+  $('#activity').hidden = true;
+  state.activity = null;
+  if (!silent) sendPeer({ type: 'activity', name: null });
+}
+
+$('#play-btn').addEventListener('click', () => {
+  $('#emoji-tray').hidden = true;
+  $('#play-menu').hidden = !$('#play-menu').hidden;
+});
+$('#play-menu').addEventListener('click', (e) => {
+  const name = e.target.closest('button')?.dataset.activity;
+  if (!name) return;
+  if (!state.call?.connected) return toast('Wait until you’re connected');
+  openActivity(name);
+});
+$('#activity-close').addEventListener('click', () => closeActivity());
+$('#draw-done-btn').addEventListener('click', () => closeActivity());
+$('#undo-btn').addEventListener('click', () => draw.undo());
+$('#clear-btn').addEventListener('click', () => draw.clear());
+$('#draw-tools').addEventListener('click', (e) => {
+  const swatch = e.target.closest('.swatch');
+  if (!swatch) return;
+  for (const s of document.querySelectorAll('.swatch')) s.classList.toggle('on', s === swatch);
+  draw.setColor(swatch.dataset.color);
+});
+document.querySelector('.swatch').classList.add('on');
 
 // ---------- effects ----------
 
@@ -530,7 +658,7 @@ function showTouch(x, y, theirs) {
 $('#booth-btn').addEventListener('click', () => {
   const call = state.call;
   if (!call?.connected || call.boothRunning) return;
-  send({ type: 'booth', to: call.peerConn });
+  sendPeer({ type: 'booth' });
   runBooth(true);
 });
 
@@ -575,6 +703,8 @@ function capturePolaroid(caption) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   drawCover(ctx, $('#remote-video'), pad, pad, frame, frame, false);
+  // Doodles sit on top of their video on screen, so put them over their photo too.
+  if (draw.hasInk()) drawCover(ctx, draw.canvas, pad, pad, frame, frame, false);
   drawCover(ctx, $('#local-video'), pad * 2 + frame, pad, frame, frame, state.call.facing === 'user');
 
   ctx.fillStyle = '#3a1f3d';
@@ -605,8 +735,8 @@ function drawCover(ctx, video, x, y, w, h, mirror) {
   ctx.clip();
   ctx.fillStyle = '#2a1630';
   ctx.fillRect(x, y, w, h);
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
+  const vw = video.videoWidth ?? video.width; // works for a <video> or a <canvas>
+  const vh = video.videoHeight ?? video.height;
   if (vw && vh) {
     const scale = Math.max(w / vw, h / vh);
     const sw = w / scale;

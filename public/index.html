@@ -57,7 +57,39 @@
       <span id="call-timer"></span>
     </div>
     <div id="call-status" class="call-status"></div>
+    <canvas id="draw-canvas" class="draw-canvas"></canvas>
+    <div id="watch-stage" class="watch-stage" hidden></div>
     <video id="local-video" autoplay playsinline muted class="mirror"></video>
+
+    <div id="draw-tools" class="draw-tools" hidden>
+      <button class="swatch" data-color="#ff5c8a" style="background:#ff5c8a" aria-label="Pink"></button>
+      <button class="swatch" data-color="#ffffff" style="background:#ffffff" aria-label="White"></button>
+      <button class="swatch" data-color="#ffd166" style="background:#ffd166" aria-label="Yellow"></button>
+      <button class="swatch" data-color="#5ee6a0" style="background:#5ee6a0" aria-label="Green"></button>
+      <button class="swatch" data-color="#6ec6ff" style="background:#6ec6ff" aria-label="Blue"></button>
+      <button class="swatch" data-color="#b388ff" style="background:#b388ff" aria-label="Purple"></button>
+      <button id="undo-btn" class="tool" aria-label="Undo">↶</button>
+      <button id="clear-btn" class="tool" aria-label="Clear drawing">🗑️</button>
+      <button id="draw-done-btn" class="tool" aria-label="Stop drawing">✓</button>
+    </div>
+
+    <div id="play-menu" class="sheet play-menu" hidden>
+      <button data-activity="draw">🎨<span>Draw together</span></button>
+      <button data-activity="quiz">💞<span>Couple quiz</span></button>
+      <button data-activity="tod">🔥<span>Truth or dare</span></button>
+      <button data-activity="wyr">🤔<span>Would you rather</span></button>
+      <button data-activity="pic">✏️<span>Pictionary</span></button>
+      <button data-activity="watch">🎬<span>Watch together</span></button>
+      <button data-activity="music">🎵<span>Listen together</span></button>
+    </div>
+
+    <section id="activity" class="sheet activity" hidden>
+      <header>
+        <h3 id="activity-title"></h3>
+        <button id="activity-close" class="tool" aria-label="Close">✕</button>
+      </header>
+      <div id="activity-body" class="activity-body"></div>
+    </section>
 
     <div id="emoji-tray" class="emoji-tray" hidden>
       <button data-emoji="❤️">❤️</button>
@@ -74,6 +106,7 @@
       <button id="cam-btn" class="ctl" aria-label="Turn camera off">📷</button>
       <button id="flip-btn" class="ctl" aria-label="Switch camera" hidden>🔄</button>
       <button id="react-btn" class="ctl" aria-label="Send love">💗</button>
+      <button id="play-btn" class="ctl" aria-label="Play together">🎲</button>
       <button id="booth-btn" class="ctl" aria-label="Photo booth">📸</button>
       <button id="hangup-btn" class="ctl hangup" aria-label="Hang up">📞</button>
     </nav>

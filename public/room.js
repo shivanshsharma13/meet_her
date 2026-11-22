@@ -5,7 +5,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js';
 import {
   getDatabase, ref, push, set, get, remove, update, onValue, onChildAdded, onChildRemoved, onDisconnect,
-  serverTimestamp, query, orderByChild, startAt, endAt, limitToLast, connectDatabaseEmulator,
+  serverTimestamp, increment, query, orderByChild, startAt, endAt, limitToLast, connectDatabaseEmulator,
 } from 'https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js';
 import { firebaseConfig } from './config.js';
 
@@ -128,6 +128,10 @@ export async function saveMemory({ caption, image, thumb }) {
   await set(ref(db, `memoryImages/${memoryRef.key}`), image);
   await set(memoryRef, { caption, thumb, by: session.uid, at: serverTimestamp() });
 }
+
+// Couple quiz points, kept forever: quizScores/{uid} = number of correct guesses.
+export const addQuizPoint = (uid) => set(ref(db, `quizScores/${uid}`), increment(1));
+export const watchQuizScores = (callback) => onValue(ref(db, 'quizScores'), (snap) => callback(snap.val() || {}));
 
 export async function loadMemoryImage(id) {
   return (await get(ref(db, `memoryImages/${id}`))).val();
